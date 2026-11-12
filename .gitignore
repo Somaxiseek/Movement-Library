@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .venv/
 qa.html
+qa-*.html
 *.zip
 *-preview.jpg
 qa-results.jpg
@@ -12,3 +13,7 @@ backups/
 attachments/
 Movement-Library-Backup-*.json
 *.log
+node_modules/
+node_modules
+*.xlsx
+*.intake.json
