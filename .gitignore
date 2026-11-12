@@ -1,0 +1,14 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.venv/
+qa.html
+*.zip
+*-preview.jpg
+qa-results.jpg
+qa-results.txt
+previous-versions/
+backups/
+attachments/
+Movement-Library-Backup-*.json
+*.log
