@@ -1,3 +1,6 @@
-Google Sheets native multi-select: body parts, primary muscles, secondary muscles each selected two values and verified through API. Test values cleared.
-Converter: 10 tests passed.
-V2.1 app browser regression: NOT RUN to completion; native browser connection timed out. V2.0 42-check report is historical only.
+Browser regression: 46 checks passed on 2026-11-12.
+Includes atomic bulk saves, abort and timeout rollback, navigation, family browsing, attachments, intake, custom dictionaries, backup validation and primary/secondary muscles.
+Converter: 12 tests passed, including embedded-original extraction by row and explicit row selection.
+Actual private Sheet images: six originals imported into daily local origin; 101 existing records retained, 107 total. Navigated back to main page and verified local data URL images loaded at original dimensions; five card covers use contain and sixth 588x612 image loads in read-only detail.
+Native Google multiselect previously tested with two values in each of three fields.
+Not verified: video intake, IMAGE-formula/external image links, unanchored floating pictures, cross-device restore. Private images and course rows excluded from Git.

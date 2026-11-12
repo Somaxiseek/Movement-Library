@@ -46,4 +46,22 @@ class IntakeTests(unittest.TestCase):
     def test_legacy_muscles_are_not_promoted(self):
         record=self.convert(self.fixture())['records'][0];self.assertEqual(record['primaryMuscles'],[]);self.assertEqual(record['secondaryMuscles'],[]);self.assertEqual(record['muscles'],['菱形肌'])
 
+    def test_selected_rows_are_explicit_and_leave_other_statuses_untouched(self):
+        data=self.fixture();data['动作录入'][1][1][0]='待整理';data['动作录入'].append((7,data['动作录入'][1][1].copy()))
+        with patch.object(converter,'read_workbook',return_value=data):result=converter.convert('fixture.xlsx',{6})
+        self.assertEqual(len(result['records']),1);self.assertEqual(data['动作录入'][1][1][0],'待整理')
+    def test_embedded_image_original_bytes_and_anchor_rows(self):
+        import tempfile,base64
+        from zipfile import ZipFile
+        with tempfile.TemporaryDirectory() as folder:
+            p=Path(folder)/'test.xlsx'
+            with ZipFile(p,'w') as z:
+                z.writestr('xl/workbook.xml','<workbook xmlns="'+converter.NS['s']+'" xmlns:r="'+converter.NS['r']+'"><sheets><sheet name="动作录入" r:id="sheet1"/></sheets></workbook>')
+                z.writestr('xl/_rels/workbook.xml.rels','<Relationships><Relationship Id="sheet1" Target="worksheets/sheet1.xml"/></Relationships>')
+                z.writestr('xl/worksheets/sheet1.xml','<worksheet xmlns="'+converter.NS['s']+'" xmlns:r="'+converter.NS['r']+'"><drawing r:id="draw1"/></worksheet>')
+                z.writestr('xl/worksheets/_rels/sheet1.xml.rels','<Relationships><Relationship Id="draw1" Target="../drawings/drawing1.xml"/></Relationships>')
+                z.writestr('xl/drawings/drawing1.xml','<wsDr xmlns="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="'+converter.NS['r']+'"><oneCellAnchor><from><row>5</row><col>15</col></from><pic><blipFill><a:blip r:embed="picture1"/></blipFill></pic></oneCellAnchor></wsDr>')
+                z.writestr('xl/drawings/_rels/drawing1.xml.rels','<Relationships><Relationship Id="picture1" Target="../media/image.png"/></Relationships>');z.writestr('xl/media/image.png',b'original-image-bytes')
+            images=converter.read_images(p);self.assertEqual(list(images),[6]);self.assertEqual(base64.b64decode(images[6][0]['data'].split(',')[1]),b'original-image-bytes');self.assertEqual(images[6][0]['type'],'image/png')
+
 if __name__=='__main__':unittest.main()

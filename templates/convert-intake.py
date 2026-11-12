@@ -2,6 +2,8 @@
 
 Standard library only. Does not upload anything or modify the source workbook.
 """
+import base64
+import mimetypes
 import argparse
 import json
 from pathlib import Path
@@ -38,8 +40,44 @@ def read_workbook(path):
                 rows.append((int(row.attrib['r']),data))
             result[sheet.attrib['name']]=rows
         return result
-def convert(path):
+
+def read_images(path):
+    """Keep embedded originals, matched by their anchor row on 动作录入 only."""
+    if not Path(path).exists():return {}
+    drawing_ns={'x':'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing','a':'http://schemas.openxmlformats.org/drawingml/2006/main',**NS}
+    def resolve(base,target):
+        name=target.lstrip('/') if target.startswith('/') else posixpath.normpath(posixpath.dirname(base)+'/'+target)
+        if not name.startswith('xl/'):raise ValueError('图片路径超出工作簿范围')
+        return name
+    def rels(z,name):
+        rel=posixpath.dirname(name)+'/_rels/'+posixpath.basename(name)+'.rels'
+        if rel not in z.namelist():return {}
+        return {r.attrib['Id']:resolve(name,r.attrib['Target']) for r in ET.fromstring(z.read(rel)) if r.attrib.get('TargetMode')!='External'}
+    result={}
+    with ZipFile(path) as z:
+        book='xl/workbook.xml';bookrels=rels(z,book)
+        sheet=next((s for s in ET.fromstring(z.read(book)).findall('s:sheets/s:sheet',NS) if s.attrib['name']=='动作录入'),None)
+        if sheet is None:return result
+        file=bookrels[sheet.attrib['{'+NS['r']+'}id']];sheetrels=rels(z,file)
+        for drawing in ET.fromstring(z.read(file)).findall('s:drawing',NS):
+            filename=sheetrels[drawing.attrib['{'+NS['r']+'}id']];images=rels(z,filename)
+            for anchor in ET.fromstring(z.read(filename)):
+                row=anchor.findtext('x:from/x:row',None,drawing_ns)
+                if row is None:continue
+                for picture in anchor.findall('x:pic',drawing_ns):
+                    blip=picture.find('x:blipFill/a:blip',drawing_ns)
+                    key=blip.attrib.get('{'+NS['r']+'}embed') if blip is not None else None
+                    if not key or key not in images:continue
+                    imagefile=images[key];mime=mimetypes.guess_type(imagefile)[0]
+                    if mime not in ['image/png','image/jpeg','image/gif','image/webp']:raise ValueError('不支持的图片格式：'+imagefile)
+                    if z.getinfo(imagefile).file_size>25*1024*1024:raise ValueError('图片超过25MB，请另行添加')
+                    content=z.read(imagefile)
+                    result.setdefault(int(row)+1,[]).append({'name':posixpath.basename(imagefile),'type':mime,'size':len(content),'data':'data:'+mime+';base64,'+base64.b64encode(content).decode('ascii')})
+    return result
+
+def convert(path, selected_rows=None):
     sheets=read_workbook(path)
+    images=read_images(path)
     if not all(k in sheets for k in ['动作录入','选项字典']):raise ValueError('缺少动作录入或选项字典工作表')
     dr=sheets['选项字典'];header=next((data for _,data in dr if '动作模式' in data.values() and '身体部位' in data.values()),None)
     if header is None:raise ValueError('选项字典表头不正确')
@@ -56,10 +94,10 @@ def convert(path):
     for number,data in rows:
         if number<=4:continue
         row={label:str(data.get(col,'')).strip() for col,label in cols.items()}
-        if row.get('录入状态')!='可导入':continue
+        if (selected_rows is not None and number not in selected_rows) or (selected_rows is None and row.get('录入状态')!='可导入'):continue
         if not row.get('动作名称*') or not row.get('体系*'):raise ValueError(f'第{number}行缺少名称或体系')
         primary=multiple(row.get('主要肌群'));secondary=multiple(row.get('次要肌群'))
-        record={'id':row.get('现有动作ID') or 'COURSE-'+uuid.uuid4().hex,'name':row['动作名称*'],'source':row.get('课程/来源') or '课程摘录','course':row.get('课程/来源',''),'catalog':row.get('目录路径',''),'locator':row.get('页码/时间点',''),'regions':multiple(row.get('区域')),'systems':multiple(row['体系*']),'parts':multiple(row.get('身体部位')),'primaryMuscles':primary,'secondaryMuscles':secondary,'muscles':list(dict.fromkeys(multiple(row.get('关联肌肉'))+primary+secondary)),'mode':row.get('动作模式',''),'family':row.get('动作家族',''),'functions':multiple(row.get('训练功能')),'equipment':multiple(row.get('器械')),'aliases':multiple(row.get('别名')),'tags':multiple(row.get('辅助标签')),'notes':row.get('技术笔记',''),'links':[x.strip() for x in row.get('参考链接','').splitlines() if x.strip()],'parentId':row.get('基础动作ID',''),'relatedIds':multiple(row.get('相关动作ID')),'media':[],'favorite':False}
+        record={'id':row.get('现有动作ID') or 'COURSE-'+uuid.uuid4().hex,'name':row['动作名称*'],'source':row.get('课程/来源') or '课程摘录','course':row.get('课程/来源',''),'catalog':row.get('目录路径',''),'locator':row.get('页码/时间点',''),'regions':multiple(row.get('区域')),'systems':multiple(row['体系*']),'parts':multiple(row.get('身体部位')),'primaryMuscles':primary,'secondaryMuscles':secondary,'muscles':list(dict.fromkeys(multiple(row.get('关联肌肉'))+primary+secondary)),'mode':row.get('动作模式',''),'family':row.get('动作家族',''),'functions':multiple(row.get('训练功能')),'equipment':multiple(row.get('器械')),'aliases':multiple(row.get('别名')),'tags':multiple(row.get('辅助标签')),'notes':row.get('技术笔记',''),'links':[x.strip() for x in row.get('参考链接','').splitlines() if x.strip()],'parentId':row.get('基础动作ID',''),'relatedIds':multiple(row.get('相关动作ID')),'media':images.get(number,[]),'favorite':False}
         if record['id'] in ids:raise ValueError(f'第{number}行动作ID重复，不会自动合并')
         ids.add(record['id'])
         for key,dkey in [('systems','systems'),('parts','parts'),('muscles','muscles'),('regions','regions'),('mode','modes'),('family','families'),('functions','functions'),('equipment','equipment')]:
@@ -69,8 +107,10 @@ def convert(path):
         records.append(record)
     return {'format':'MovementLibraryIntakeV1','records':records,'dictionary':dictionary,'sourceWorkbook':Path(path).name}
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('xlsx');parser.add_argument('-o','--output');args=parser.parse_args()
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('xlsx');parser.add_argument('-o','--output');parser.add_argument('--rows',help='仅转换明确选定的行号（逗号分隔），不受录入状态限制');args=parser.parse_args()
     try:
-        data=convert(args.xlsx);output=Path(args.output) if args.output else Path(args.xlsx).with_suffix('.intake.json');output.write_text(json.dumps(data,ensure_ascii=False,indent=2));print(f'已生成 {output}，可导入动作 {len(data["records"])} 条。字典中的未使用选项也会同步。')
+        selected={int(n.strip()) for n in args.rows.split(',')} if args.rows else None
+        if selected is not None and any(n<6 for n in selected):raise ValueError('请仅选择第6行及以后的动作')
+        data=convert(args.xlsx,selected);output=Path(args.output) if args.output else Path(args.xlsx).with_suffix('.intake.json');output.write_text(json.dumps(data,ensure_ascii=False,indent=2));print(f'已生成 {output}，可导入动作 {len(data["records"])} 条。字典中的未使用选项也会同步。')
     except (ValueError,KeyError,ET.ParseError) as error:parser.exit(1,str(error)+'\n')
 if __name__=='__main__':main()

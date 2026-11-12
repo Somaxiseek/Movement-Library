@@ -48,3 +48,9 @@ python3 templates/convert-intake.py '/path/to/课程摘录.xlsx'
 ```sh
 python3 templates/test_convert_intake.py
 ```
+
+## 表格图片
+
+下载 XLSX 时，转换器会提取“动作录入”页中锚定到动作所在行的内嵌 PNG/JPEG/GIF/WebP 原图，随该动作写入本地附件。首张图片用于卡片封面，完整显示不裁切。请把图片放在对应动作行；跨行浮动图要先核对归属。外部 IMAGE 链接、无行锚点的浮动图尚不自动下载。
+
+通常仍只导入“可导入”的行。仅在明确试用指定动作时，可用 `--rows 80,86` 指定行号；不会修改原表状态，也不应反复转换空ID动作来更新资料。图片随JSON备份保存；私人图片及试用包不提交公开仓库。
